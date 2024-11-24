@@ -1,0 +1,6 @@
+# build
+build/
+*.o
+
+test_vec
+vec_test
