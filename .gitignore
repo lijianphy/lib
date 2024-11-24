@@ -3,4 +3,4 @@ build/
 *.o
 
 test_vec
-vec_test
+test_khash

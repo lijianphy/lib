@@ -4,6 +4,11 @@
 #include <stdlib.h>
 #include <string.h>
 
+/**
+ * @brief Define vector implementation for a given data type.
+ * @param dtype Data type [type].
+ * @param vtype Vector type [symbol].
+ */
 #define VEC_IMPL(dtype, vtype)                                                \
     typedef struct                                                            \
     {                                                                         \

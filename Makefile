@@ -1,28 +1,27 @@
-CC = gcc
-CFLAGS = -Wall -Wextra -O2 -march=native -std=c17 -pedantic
+CC := gcc
+CFLAGS := -Wall -Wextra -O2 -march=native -std=c17 -pedantic
 
-BUILD_DIR = build
-SRCS = $(wildcard *.c)
-OBJS = $(SRCS:%.c=$(BUILD_DIR)/%.o)
+SRCS := $(wildcard *.c)
+OBJS := $(SRCS:%.c=%.o)
 
-TARGETS = vec_test
+TARGETS := test_vec test_khash
 
-# Create variables for specific object files with BUILD_DIR prefix
-VEC_TEST_OBJS = $(addprefix $(BUILD_DIR)/, vec_test.o)
+.PHONY: all clean test
 
-.PHONY: all clean
+all: $(OBJS) $(TARGETS)
 
-all: $(BUILD_DIR) $(OBJS) $(TARGETS)
-
-$(BUILD_DIR):
-	mkdir -p $(BUILD_DIR)
-
-vec_test: $(VEC_TEST_OBJS)
+test_vec: test_vec.o
 	$(CC) $(CFLAGS) -g -o $@ $^
-	valgrind --leak-check=full --show-leak-kinds=all ./vec_test
 
-$(BUILD_DIR)/%.o: %.c
+test_khash: test_khash.o
+	$(CC) $(CFLAGS) -o test_khash test_khash.c
+
+test: $(TARGETS)
+	valgrind --leak-check=full --show-leak-kinds=all ./test_vec
+	valgrind --leak-check=full --show-leak-kinds=all ./test_khash
+
+%.o: %.c vec.h khash.h
 	$(CC) $(CFLAGS) -c $< -o $@
 
 clean:
-	rm -rf $(BUILD_DIR) $(TARGETS)
+	rm -rf $(TARGETS) $(OBJS)
