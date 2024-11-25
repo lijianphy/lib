@@ -54,33 +54,42 @@
         return v->data[--(v->size)];                                          \
     }                                                                         \
                                                                               \
-    /* Resize vector capacity */                                              \
-    static inline void vtype##_resize(vtype *v, size_t size)                  \
+    /* Reserve vector data */                                                 \
+    static inline int vtype##_reserve(vtype *v, size_t capacity)              \
     {                                                                         \
-        v->capacity = size;                                                   \
-        v->data = (dtype *)realloc(v->data, sizeof(dtype) * v->capacity);     \
+        dtype *new_data;                                                      \
+        new_data = (dtype *)realloc(v->data, sizeof(dtype) * capacity);       \
+        if (!new_data)                                                        \
+            return -1;                                                        \
+        v->data = new_data;                                                   \
+        v->capacity = capacity;                                               \
+        return 0;                                                             \
     }                                                                         \
                                                                               \
     /* Push element to vector */                                              \
-    static inline void vtype##_push(vtype *v, dtype x)                        \
+    static inline int vtype##_push(vtype *v, dtype x)                         \
     {                                                                         \
         if (v->size == v->capacity)                                           \
         {                                                                     \
-            v->capacity = v->capacity ? v->capacity << 1 : 2;                 \
-            v->data = (dtype *)realloc(v->data, sizeof(dtype) * v->capacity); \
+            size_t new_capacity = v->capacity ? v->capacity << 1 : 2;         \
+            if (vtype##_reserve(v, new_capacity) != 0)                        \
+                return -1;                                                    \
         }                                                                     \
         v->data[v->size++] = x;                                               \
+        return 0;                                                             \
     }                                                                         \
                                                                               \
     /* Copy vector */                                                         \
-    static inline void vtype##_copy(vtype *restrict dst, vtype *restrict src) \
+    static inline int vtype##_copy(vtype *restrict dst, vtype *restrict src)  \
     {                                                                         \
         if (dst->capacity < src->size)                                        \
         {                                                                     \
-            vtype##_resize(dst, src->size);                                   \
+            if (vtype##_reserve(dst, src->size) != 0)                         \
+                return -1;                                                    \
         }                                                                     \
         dst->size = src->size;                                                \
         memcpy(dst->data, src->data, sizeof(dtype) * src->size);              \
+        return 0;                                                             \
     }                                                                         \
                                                                               \
     /* Move vector */                                                         \
