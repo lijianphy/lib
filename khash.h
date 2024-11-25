@@ -128,8 +128,6 @@ int main() {
 #include <string.h>
 #include <stdint.h>
 
-/* compiler specific configuration */
-
 typedef int32_t khint32_t;
 typedef uint32_t khuint32_t;
 typedef int64_t khint64_t;
@@ -153,6 +151,14 @@ typedef uint64_t khuint64_t;
 
 typedef khint32_t khint_t;
 typedef khint_t khiter_t;
+
+/* Hash table probe statistics structure */
+typedef struct
+{
+    int max_probes;    /* Maximum number of probes needed */
+    double avg_probes; /* Average number of probes needed */
+    double variance;   /* Variance of probe counts */
+} kh_probe_stat_t;
 
 #define __ac_isempty(flag, i) ((flag[i >> 4] >> ((i & 0xfU) << 1)) & 2)
 #define __ac_isdel(flag, i) ((flag[i >> 4] >> ((i & 0xfU) << 1)) & 1)
@@ -206,7 +212,8 @@ static const double __ac_HASH_UPPER = 0.77;
     extern khint_t kh_get_##name(const kh_##name##_t *h, khkey_t key);     \
     extern int kh_resize_##name(kh_##name##_t *h, khint_t new_n_buckets);  \
     extern khint_t kh_put_##name(kh_##name##_t *h, khkey_t key, int *ret); \
-    extern void kh_del_##name(kh_##name##_t *h, khint_t x);
+    extern void kh_del_##name(kh_##name##_t *h, khint_t x);                \
+    extern kh_probe_stat_t kh_probe_stat_##name(const kh_##name##_t *h);
 
 #define __KHASH_IMPL(name, SCOPE, khkey_t, khval_t, kh_is_map, __hash_func, __hash_equal)                     \
     /* Allocate and initialize new hash table */                                                              \
@@ -424,6 +431,48 @@ static const double __ac_HASH_UPPER = 0.77;
             __ac_set_isdel_true(h->flags, x);                                                                 \
             --h->size;                                                                                        \
         }                                                                                                     \
+    }                                                                                                         \
+    SCOPE kh_probe_stat_t kh_probe_stat_##name(const kh_##name##_t *h)                                        \
+    {                                                                                                         \
+        kh_probe_stat_t stats = {0, 0.0, 0.0};                                                                \
+        khint_t n_filled = 0;                                                                                 \
+        double sum_probes = 0.0;                                                                              \
+        double sum_squares = 0.0;                                                                             \
+        khint_t mask = h->n_buckets - 1;                                                                      \
+                                                                                                              \
+        for (khint_t i = 0; i < h->n_buckets; ++i)                                                            \
+        {                                                                                                     \
+            if (__ac_iseither(h->flags, i))                                                                   \
+                continue;                                                                                     \
+                                                                                                              \
+            /* For each existing key, count probes needed to find it */                                       \
+            khkey_t key = h->keys[i];                                                                         \
+            khint_t k = __hash_func(key);                                                                     \
+            khint_t pos = k & mask;                                                                           \
+            int probes = 1;                                                                                   \
+                                                                                                              \
+            while (!__ac_isempty(h->flags, pos) &&                                                            \
+                   (__ac_isdel(h->flags, pos) || !__hash_equal(h->keys[pos], key)))                           \
+            {                                                                                                 \
+                pos = (pos + probes) & mask;                                                                  \
+                probes++;                                                                                     \
+            }                                                                                                 \
+                                                                                                              \
+            sum_probes += probes;                                                                             \
+            sum_squares += (double)probes * probes;                                                           \
+            if (probes > stats.max_probes)                                                                    \
+                stats.max_probes = probes;                                                                    \
+            n_filled++;                                                                                       \
+        }                                                                                                     \
+                                                                                                              \
+        if (n_filled > 0)                                                                                     \
+        {                                                                                                     \
+            stats.avg_probes = sum_probes / n_filled;                                                         \
+            double mean = stats.avg_probes;                                                                   \
+            stats.variance = (sum_squares / n_filled) - (mean * mean);                                        \
+        }                                                                                                     \
+                                                                                                              \
+        return stats;                                                                                         \
     }
 
 #define KHASH_DECLARE(name, khkey_t, khval_t) \
@@ -751,5 +800,8 @@ typedef const char *kh_cstr_t;
  */
 #define KHASH_MAP_INIT_STR(name, khval_t) \
     KHASH_INIT(name, kh_cstr_t, khval_t, 1, kh_str_hash_func, kh_str_hash_equal)
+
+/* Macro to get probe statistics for a specific hash table type */
+#define kh_probe_stats(name, h) kh_probe_stat_##name(h)
 
 #endif /* __AC_KHASH_H */

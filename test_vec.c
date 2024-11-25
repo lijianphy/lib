@@ -23,7 +23,7 @@ void test_vec_push_pop() {
     // Test push
     for (int i = 0; i < 10; i++) {
         vec_int_push(&v, i);
-        assert(v.size == i + 1);
+        assert(v.size == (size_t)(i + 1));
         assert(vec_int_get(&v, i) == i);
     }
     
@@ -31,7 +31,7 @@ void test_vec_push_pop() {
     for (int i = 9; i >= 0; i--) {
         int val = vec_int_pop(&v);
         assert(val == i);
-        assert(v.size == i);
+        assert(v.size == (size_t)i);
     }
     
     vec_int_destroy(&v);
