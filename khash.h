@@ -170,6 +170,7 @@ typedef khint_t khiter_t;
 #define kroundup32(x) (--(x), (x) |= (x) >> 1, (x) |= (x) >> 2, (x) |= (x) >> 4, (x) |= (x) >> 8, (x) |= (x) >> 16, ++(x))
 #endif
 
+/* Support custom memory allocation functions */
 #ifndef kcalloc
 #define kcalloc(N, Z) calloc(N, Z)
 #endif
@@ -183,8 +184,10 @@ typedef khint_t khiter_t;
 #define kfree(P) free(P)
 #endif
 
+/* Default upper bound of filling factor. */
 static const double __ac_HASH_UPPER = 0.77;
 
+/* Calculate the upper bound of the number of elements in a hash table given the number of buckets. */
 #define __ac_upper_bound(n) ((khint_t)((n) * __ac_HASH_UPPER + 0.5))
 
 #define __KHASH_TYPE(name, khkey_t, khval_t)              \
@@ -206,20 +209,23 @@ static const double __ac_HASH_UPPER = 0.77;
     extern void kh_del_##name(kh_##name##_t *h, khint_t x);
 
 #define __KHASH_IMPL(name, SCOPE, khkey_t, khval_t, kh_is_map, __hash_func, __hash_equal)                     \
+    /* Allocate and initialize new hash table */                                                              \
     SCOPE kh_##name##_t *kh_init_##name(void)                                                                 \
     {                                                                                                         \
         return (kh_##name##_t *)kcalloc(1, sizeof(kh_##name##_t));                                            \
     }                                                                                                         \
+    /* Destroy and release memory of hash table */                                                            \
     SCOPE void kh_destroy_##name(kh_##name##_t *h)                                                            \
     {                                                                                                         \
         if (h)                                                                                                \
         {                                                                                                     \
-            kfree((void *)h->keys);                                                                           \
+            kfree(h->keys);                                                                                   \
             kfree(h->flags);                                                                                  \
-            kfree((void *)h->vals);                                                                           \
+            kfree(h->vals);                                                                                   \
             kfree(h);                                                                                         \
         }                                                                                                     \
     }                                                                                                         \
+    /* clear all keys (by setting all flags to empty) */                                                      \
     SCOPE void kh_clear_##name(kh_##name##_t *h)                                                              \
     {                                                                                                         \
         if (h && h->flags)                                                                                    \
@@ -247,7 +253,7 @@ static const double __ac_HASH_UPPER = 0.77;
         return __ac_iseither(h->flags, i) ? h->n_buckets : i;                                                 \
     }                                                                                                         \
     SCOPE int kh_resize_##name(kh_##name##_t *h, khint_t new_n_buckets)                                       \
-    {                                                                                                         \
+    { /* Note: if new_n_buckets == old_n_buckets, this function will effectively do a rehash */               \
         khint32_t *new_flags = NULL;                                                                          \
         kroundup32(new_n_buckets);                                                                            \
         if (new_n_buckets < 4)                                                                                \
@@ -262,7 +268,7 @@ static const double __ac_HASH_UPPER = 0.77;
         memset(new_flags, 0xaa, new_fsize * sizeof(khint32_t));                                               \
         if (h->n_buckets < new_n_buckets)                                                                     \
         { /* expand */                                                                                        \
-            khkey_t *new_keys = (khkey_t *)krealloc((void *)h->keys, new_n_buckets * sizeof(khkey_t));        \
+            khkey_t *new_keys = (khkey_t *)krealloc(h->keys, new_n_buckets * sizeof(khkey_t));                \
             if (!new_keys)                                                                                    \
             {                                                                                                 \
                 kfree(new_flags);                                                                             \
@@ -270,7 +276,7 @@ static const double __ac_HASH_UPPER = 0.77;
             }                                                                                                 \
             if (kh_is_map)                                                                                    \
             {                                                                                                 \
-                khval_t *new_vals = (khval_t *)krealloc((void *)h->vals, new_n_buckets * sizeof(khval_t));    \
+                khval_t *new_vals = (khval_t *)krealloc(h->vals, new_n_buckets * sizeof(khval_t));            \
                 if (!new_vals)                                                                                \
                 {                                                                                             \
                     kfree(new_flags);                                                                         \
@@ -280,7 +286,7 @@ static const double __ac_HASH_UPPER = 0.77;
                 h->vals = new_vals;                                                                           \
             }                                                                                                 \
             h->keys = new_keys;                                                                               \
-        } /* otherwise shrink after rehashing */                                                              \
+        }                                                                                                     \
         /* rehashing */                                                                                       \
         khint_t new_mask = new_n_buckets - 1;                                                                 \
         for (khint_t j = 0; j != h->n_buckets; ++j)                                                           \
@@ -298,7 +304,9 @@ static const double __ac_HASH_UPPER = 0.77;
                     k = __hash_func(key);                                                                     \
                     i = k & new_mask;                                                                         \
                     while (!__ac_isempty(new_flags, i))                                                       \
+                    {                                                                                         \
                         i = (i + (++step)) & new_mask;                                                        \
+                    }                                                                                         \
                     __ac_set_isempty_false(new_flags, i);                                                     \
                     if (i < h->n_buckets && __ac_iseither(h->flags, i) == 0)                                  \
                     { /* kick out the existing element */                                                     \
@@ -327,9 +335,9 @@ static const double __ac_HASH_UPPER = 0.77;
         }                                                                                                     \
         if (h->n_buckets > new_n_buckets)                                                                     \
         { /* shrink the hash table */                                                                         \
-            h->keys = (khkey_t *)krealloc((void *)h->keys, new_n_buckets * sizeof(khkey_t));                  \
+            h->keys = (khkey_t *)krealloc(h->keys, new_n_buckets * sizeof(khkey_t));                          \
             if (kh_is_map)                                                                                    \
-                h->vals = (khval_t *)krealloc((void *)h->vals, new_n_buckets * sizeof(khval_t));              \
+                h->vals = (khval_t *)krealloc(h->vals, new_n_buckets * sizeof(khval_t));                      \
         }                                                                                                     \
         kfree(h->flags); /* free the working space */                                                         \
         h->flags = new_flags;                                                                                 \
@@ -481,7 +489,7 @@ static inline khint_t kh_int64_hash_func(uint64_t x)
 
 #define KH_FNV_SEED 11
 
-static inline khint_t kh_fnv_hash_str(const char* s)
+static inline khint_t kh_fnv_hash_str(const char *s)
 { /* FNV1a */
     khint_t h = KH_FNV_SEED ^ 2166136261U;
     const unsigned char *t = (const unsigned char *)s;
